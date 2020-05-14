@@ -10,6 +10,14 @@
 #define LCD_PORT P4
 #define KEYPAD_PORT P5
 
+// DAC declarations
+#define DAC_PORT P1
+#define DAC_CS_PORT P4
+#define DAC_CS_PIN BIT4
+#define GAIN BIT5
+#define SHDN BIT4
+
+// voltage constants
 #define VOLT 1241
 #define DC_BIAS 2048
 #define VOLT_MAX 4095
@@ -35,6 +43,22 @@ void update_lcd(int frequency, float duty_cycle, wave_type wave)
   LCD_write_strings(top_line, bottom_line);
 }
 
+void DAC_init(void)
+{
+  DAC_PORT->SEL0 |= BIT5 | BIT6 | BIT7;  // Set DAC_PORT.5, DAC_PORT.6, and
+                                         // DAC_PORT.7 as SPI pins functionality
+
+  DAC_CS_PORT->DIR |= DAC_CS_PIN;  // set as output for CS
+
+  EUSCI_B0->CTLW0 |= EUSCI_B_CTLW0_SWRST;
+  EUSCI_B0->CTLW0 = EUSCI_B_CTLW0_SWRST | EUSCI_B_CTLW0_MST |
+                    EUSCI_B_CTLW0_SYNC | EUSCI_B_CTLW0_CKPL |
+                    EUSCI_B_CTLW0_UCSSEL_2 | EUSCI_B_CTLW0_MSB;
+
+  EUSCI_B0->BRW = 0x02;  // div by 2 fBitClock = fBRCLK / UCBRx
+  EUSCI_B0->CTLW0 &= ~EUSCI_B_CTLW0_SWRST;  // Initialize USCI state machine
+}
+
 typedef enum wave_type {
   SQUARE,
   SAWTOOTH,
@@ -53,6 +77,7 @@ void main(void)
 
   keypad_init();
   LCD_init();
+  DAC_init();
   update_lcd(frequency, duty_cycle, wave);
 
   set_DCO(MHZ_24);
