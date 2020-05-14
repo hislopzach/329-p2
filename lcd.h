@@ -19,6 +19,7 @@
 // constants
 #define LCD_LINESIZE 20
 
+char intToChar(uint8_t number);
 void delayMs(int n);
 void LCD_nibble_write(unsigned char data, unsigned char control);
 void LCD_command(unsigned char command);
