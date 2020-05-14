@@ -56,6 +56,18 @@ void main(void)
   set_DCO(MHZ_24);
 
   WDT_A->CTL = WDT_A_CTL_PW | WDT_A_CTL_HOLD;  // stop watchdog timer
+
+  // Setup interrupt and timer
+  TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;  // TACCR0 interrupt enabled
+  TIMER_A0->CCR[0] = 5;
+
+  TIMER_A0->CTL = TIMER_A_CTL_SSEL__SMCLK |  // SMCLK, continuous mode
+                  TIMER_A_CTL_MC__CONTINUOUS;
+  // Enable global interrupt
+  __enable_irq();
+  // Enable Port 1 interrupt on the NVIC
+  NVIC->ISER[0] = 1 << ((TA0_0_IRQn)&31);
+
   while (1) {
     key = key_to_char(keypad_getkey());
     // perform actions for current state
@@ -127,6 +139,20 @@ int sine_approx(int degrees)
   int num = (degrees << 2) * (180 - degrees);
   float dem = 40500 - (degrees * (180 - degrees));
   return DC_BIAS * (num / dem * shift + 1);
+}
+
+void TA0_0_IRQHandler(void)
+{
+  switch (wave) {
+    case SQUARE:
+      break;
+    case SINE:
+      break;
+    case SAWTOOTH:
+      break;
+    default:
+      break;
+  };
 }
 
 const char* get_type_string(wave_type wave)
