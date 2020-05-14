@@ -68,7 +68,7 @@ void main(void)
 
   // Setup interrupt and timer
   TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;  // TACCR0 interrupt enabled
-  TIMER_A0->CCR[0] = CCR0_VAL;
+  TIMER_A0->CCR[0] = 888;
 
   TIMER_A0->CTL = TIMER_A_CTL_SSEL__SMCLK |  // SMCLK, continuous mode
                   TIMER_A_CTL_MC__CONTINUOUS;
@@ -163,10 +163,12 @@ float sine_approx(int degrees)
 void TA0_0_IRQHandler(void)
 {
   TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
+  int on_count, sine_step, saw_step;
+
 
   switch (wave) {
     case SQUARE:
-      int on_count = get_points_per_cycle(frequency) * duty_cycle;
+      on_count = get_points_per_cycle(frequency) * duty_cycle;
       if (int_counter > get_points_per_cycle(frequency)) {
         int_counter = 0;
         square_mode = 1;
@@ -180,15 +182,15 @@ void TA0_0_IRQHandler(void)
       break;
     case SINE:
       if (int_counter > 360) {
-        int_counter = 0
+        int_counter = 0;
       }
       dac_level = DC_BIAS + AMPLITUDE * sine_approx(int_counter);
       DAC_write(dac_level);
-      int sine_step = 360 / get_points_per_cycle(frequency);
+      sine_step = 360 / get_points_per_cycle(frequency);
       int_counter += sine_step;
       break;
     case SAWTOOTH:
-      int saw_step = AMPLITUDE / get_points_per_cycle(frequency);
+      saw_step = AMPLITUDE / get_points_per_cycle(frequency);
       if (dac_level > VOLT_MAX) {
         dac_level = DC_BIAS;
       }
