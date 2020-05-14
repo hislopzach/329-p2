@@ -24,6 +24,9 @@
 #define VOLT 1241
 #define DC_BIAS 2048
 #define VOLT_MAX 4095
+#define AMPLITUDE (VOLT_MAX - DC_BIAS)
+
+#define CCR0_VAL = 888
 
 // dac functions
 void DAC_init(void);
@@ -37,12 +40,18 @@ typedef enum wave_type {
 
 const char* get_type_string(wave_type wave);
 void update_lcd(int frequency, float duty_cycle, wave_type wave);
+int get_points_per_cycle(int frequency);
+float sine_approx(int degrees);
 
 // globals
 char key = '\0';
 float duty_cycle = 0.5f;
 int frequency = 100;
+volatile unsigned int dac_level = DC_BIAS;
 wave_type wave = SQUARE;
+
+int square_mode = 1;  // determines whether the square wave is on or off
+int int_counter = 0;  // used to track number of interrupts for square and sine
 
 void main(void)
 {
@@ -59,13 +68,13 @@ void main(void)
 
   // Setup interrupt and timer
   TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;  // TACCR0 interrupt enabled
-  TIMER_A0->CCR[0] = 5;
+  TIMER_A0->CCR[0] = CCR0_VAL;
 
   TIMER_A0->CTL = TIMER_A_CTL_SSEL__SMCLK |  // SMCLK, continuous mode
                   TIMER_A_CTL_MC__CONTINUOUS;
   // Enable global interrupt
   __enable_irq();
-  // Enable Port 1 interrupt on the NVIC
+  // Enable TimerA Interrupt
   NVIC->ISER[0] = 1 << ((TA0_0_IRQn)&31);
 
   while (1) {
@@ -90,29 +99,38 @@ void main(void)
 
       case '7':
         wave = SQUARE;
+        square_mode = 1;
+        int_counter = 0;
         break;
       case '8':
         wave = SINE;
+        int_counter = 0;
         break;
       case '9':
         wave = SAWTOOTH;
         break;
       case '*':
-        // adjust duty cycle by -10%
-        duty_cycle -= 0.1f;
-        if (duty_cycle < 0.1f) {
-          duty_cycle = 0.1f;
+        // if square wave adjust duty cycle by -10%
+        if (wave == SQUARE) {
+          duty_cycle -= 0.1f;
+          if (duty_cycle < 0.1f) {
+            duty_cycle = 0.1f;
+          }
         }
         break;
       case '0':
-        // set duty cycle to 50%
-        duty_cycle = 0.5f;
+        // if square wave set duty cycle to 50%
+        if (wave == SQUARE) {
+          duty_cycle = 0.5f;
+        }
         break;
       case '#':
-        // adjust duty cycle by -10%
-        duty_cycle += 0.1f;
-        if (duty_cycle > 0.9f) {
-          duty_cycle = 0.9f;
+        // if square wave adjust duty cycle by -10%
+        if (wave == SQUARE) {
+          duty_cycle += 0.1f;
+          if (duty_cycle > 0.9f) {
+            duty_cycle = 0.9f;
+          }
         }
         break;
       case '\0':
@@ -130,25 +148,52 @@ void main(void)
 }
 
 // uses Bhaskara I's sine approximation
-int sine_approx(int degrees)
+float sine_approx(int degrees)
 {
-  int shift = -1;
+  int sign = 1;
   if (degrees > 180) {
+    sign = -1;
     degrees -= 180;
   }
-  int num = (degrees << 2) * (180 - degrees);
-  float dem = 40500 - (degrees * (180 - degrees));
-  return DC_BIAS * (num / dem * shift + 1);
+  int numerator = (degrees << 2) * (180 - degrees);
+  float denominator = 40500 - (degrees * (180 - degrees));
+  return numerator / denominator * sign;
 }
 
 void TA0_0_IRQHandler(void)
 {
+  TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
+
   switch (wave) {
     case SQUARE:
+      int on_count = get_points_per_cycle(frequency) * duty_cycle;
+      if (int_counter > get_points_per_cycle(frequency)) {
+        int_counter = 0;
+        square_mode = 1;
+      }
+      else if (int_counter > on_count) {
+        square_mode = 0;
+      }
+      dac_level = DC_BIAS + AMPLITUDE * square_mode;
+      DAC_write(dac_level);
+      int_counter += 1;
       break;
     case SINE:
+      if (int_counter > 360) {
+        int_counter = 0
+      }
+      dac_level = DC_BIAS + AMPLITUDE * sine_approx(int_counter);
+      DAC_write(dac_level);
+      int sine_step = 360 / get_points_per_cycle(frequency);
+      int_counter += sine_step;
       break;
     case SAWTOOTH:
+      int saw_step = AMPLITUDE / get_points_per_cycle(frequency);
+      if (dac_level > VOLT_MAX) {
+        dac_level = DC_BIAS;
+      }
+      DAC_write(dac_level);
+      dac_level += saw_step;
       break;
     default:
       break;
@@ -217,4 +262,20 @@ void DAC_write(unsigned int level)
     ;
 
   DAC_CS_PORT->OUT |= DAC_CS_PIN;  // set CS high
+}
+
+int get_points_per_cycle(int frequency)
+{
+  switch (frequency) {
+    case 100:
+      return 270;
+    case 200:
+      return 135;
+    case 300:
+      return 90;
+    case 400:
+      return 68;
+    case 500:
+      return 54;
+  }
 }
