@@ -22,42 +22,12 @@
 #define DC_BIAS 2048
 #define VOLT_MAX 4095
 
-const char[] get_type_string(wave_type wave)
-{
-  switch (wave) {
-    case SQUARE:
-      return "SQR";
-    case SAWTOOTH:
-      return "SAW";
-    case SINE:
-      return "SIN";
-  }
-}
+// dac functions
+void DAC_init(void);
+void DAC_write(unsigned int level);
 
-void update_lcd(int frequency, float duty_cycle, wave_type wave)
-{
-  char top_line[LCD_LINESIZE], bottom_line[LCD_LINESIZE];
-  strcpy(top_line, "FREQ DC  WAVE");
-  sprintf(bottom_line, "%d  %d%% %s", frequency, duty_cycle,
-          get_type_string(wave));
-  LCD_write_strings(top_line, bottom_line);
-}
-
-void DAC_init(void)
-{
-  DAC_PORT->SEL0 |= BIT5 | BIT6 | BIT7;  // Set DAC_PORT.5, DAC_PORT.6, and
-                                         // DAC_PORT.7 as SPI pins functionality
-
-  DAC_CS_PORT->DIR |= DAC_CS_PIN;  // set as output for CS
-
-  EUSCI_B0->CTLW0 |= EUSCI_B_CTLW0_SWRST;
-  EUSCI_B0->CTLW0 = EUSCI_B_CTLW0_SWRST | EUSCI_B_CTLW0_MST |
-                    EUSCI_B_CTLW0_SYNC | EUSCI_B_CTLW0_CKPL |
-                    EUSCI_B_CTLW0_UCSSEL_2 | EUSCI_B_CTLW0_MSB;
-
-  EUSCI_B0->BRW = 0x02;  // div by 2 fBitClock = fBRCLK / UCBRx
-  EUSCI_B0->CTLW0 &= ~EUSCI_B_CTLW0_SWRST;  // Initialize USCI state machine
-}
+const char[] get_type_string(wave_type wave);
+void update_lcd(int frequency, float duty_cycle, wave_type wave);
 
 typedef enum wave_type {
   SQUARE,
@@ -154,4 +124,66 @@ int sine_approx(int degrees)
   int num = (deg << 2) * (180 - deg);
   float dem = 40500 - (deg * (180 - deg));
   return DC_BIAS * (num / dem * shift + 1);
+}
+
+const char[] get_type_string(wave_type wave)
+{
+  switch (wave) {
+    case SQUARE:
+      return "SQR";
+    case SAWTOOTH:
+      return "SAW";
+    case SINE:
+      return "SIN";
+  }
+}
+
+void update_lcd(int frequency, float duty_cycle, wave_type wave)
+{
+  char top_line[LCD_LINESIZE], bottom_line[LCD_LINESIZE];
+  strcpy(top_line, "FREQ  DC  WAVE");
+  sprintf(bottom_line, "%d  %d%% %s", frequency, duty_cycle,
+          get_type_string(wave));
+  LCD_write_strings(top_line, bottom_line);
+}
+
+void DAC_init(void)
+{
+  DAC_PORT->SEL0 |= BIT5 | BIT6 | BIT7;  // Set DAC_PORT.5, DAC_PORT.6, and
+                                         // DAC_PORT.7 as SPI pins functionality
+
+  DAC_CS_PORT->DIR |= DAC_CS_PIN;  // set as output for CS
+
+  EUSCI_B0->CTLW0 |= EUSCI_B_CTLW0_SWRST;
+  EUSCI_B0->CTLW0 = EUSCI_B_CTLW0_SWRST | EUSCI_B_CTLW0_MST |
+                    EUSCI_B_CTLW0_SYNC | EUSCI_B_CTLW0_CKPL |
+                    EUSCI_B_CTLW0_UCSSEL_2 | EUSCI_B_CTLW0_MSB;
+
+  EUSCI_B0->BRW = 0x02;  // div by 2 fBitClock = fBRCLK / UCBRx
+  EUSCI_B0->CTLW0 &= ~EUSCI_B_CTLW0_SWRST;  // Initialize USCI state machine
+}
+
+void DAC_write(unsigned int level)
+{
+  loByte = 0xFF & level;         // mask just low 8 bits
+  hiByte = 0x0F & (level >> 8);  // shift and mask bits for D11-D8
+  hiByte |= (GAIN | SHDN);       // set the gain / shutdown control bits
+
+  DAC_CS_PORT->OUT &= ~DAC_CS_PORT;  // set CS low
+
+  // wait for TXBUF to be empty before writing high byte
+  while (!(EUSCI_B0->IFG & EUSCI_B_IFG_TXIFG))
+    ;
+  EUSCI_B0->TXBUF = hiByte;
+
+  // wait for TXBUF to be empty before writing low byte
+  while (!(EUSCI_B0->IFG & EUSCI_B_IFG_TXIFG))
+    ;
+  EUSCI_B0->TXBUF = loByte;
+
+  // wait for RXBUF to be empty before changing CS
+  while (!(EUSCI_B0->IFG & EUSCI_B_IFG_RXIFG))
+    ;
+
+  DAC_CS_PORT->OUT |= DAC_CS_PORT;  // set CS high
 }
