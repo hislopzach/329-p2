@@ -118,3 +118,15 @@ void main(void)
     delayMs(300);
   }
 }
+
+// uses Bhaskara I's sine approximation
+int sine_approx(int degrees)
+{
+  int shift = -1;
+  if (degrees > 180) {
+    degrees -= 180;
+  }
+  int num = (deg << 2) * (180 - deg);
+  float dem = 40500 - (deg * (180 - deg));
+  return DC_BIAS * (num / dem * shift + 1);
+}
