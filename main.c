@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <string.h>
+
 #include "dco.h"
 #include "keypad.h"
 #include "lcd.h"
@@ -26,14 +29,14 @@
 void DAC_init(void);
 void DAC_write(unsigned int level);
 
-const char[] get_type_string(wave_type wave);
-void update_lcd(int frequency, float duty_cycle, wave_type wave);
-
 typedef enum wave_type {
   SQUARE,
   SAWTOOTH,
   SINE,
 } wave_type;
+
+const char* get_type_string(wave_type wave);
+void update_lcd(int frequency, float duty_cycle, wave_type wave);
 
 // globals
 char key = '\0';
@@ -121,12 +124,12 @@ int sine_approx(int degrees)
   if (degrees > 180) {
     degrees -= 180;
   }
-  int num = (deg << 2) * (180 - deg);
-  float dem = 40500 - (deg * (180 - deg));
+  int num = (degrees << 2) * (180 - degrees);
+  float dem = 40500 - (degrees * (180 - degrees));
   return DC_BIAS * (num / dem * shift + 1);
 }
 
-const char[] get_type_string(wave_type wave)
+const char* get_type_string(wave_type wave)
 {
   switch (wave) {
     case SQUARE:
@@ -136,13 +139,14 @@ const char[] get_type_string(wave_type wave)
     case SINE:
       return "SIN";
   }
+  return "UNKNOWN";
 }
 
 void update_lcd(int frequency, float duty_cycle, wave_type wave)
 {
   char top_line[LCD_LINESIZE], bottom_line[LCD_LINESIZE];
   strcpy(top_line, "FREQ  DC  WAVE");
-  sprintf(bottom_line, "%d  %d%% %s", frequency, duty_cycle,
+  sprintf(bottom_line, "%d  %d %s", frequency, (int)(duty_cycle * 100),
           get_type_string(wave));
   LCD_write_strings(top_line, bottom_line);
 }
@@ -165,11 +169,12 @@ void DAC_init(void)
 
 void DAC_write(unsigned int level)
 {
+  uint8_t hiByte, loByte;
   loByte = 0xFF & level;         // mask just low 8 bits
   hiByte = 0x0F & (level >> 8);  // shift and mask bits for D11-D8
   hiByte |= (GAIN | SHDN);       // set the gain / shutdown control bits
 
-  DAC_CS_PORT->OUT &= ~DAC_CS_PORT;  // set CS low
+  DAC_CS_PORT->OUT &= ~DAC_CS_PIN;  // set CS low
 
   // wait for TXBUF to be empty before writing high byte
   while (!(EUSCI_B0->IFG & EUSCI_B_IFG_TXIFG))
@@ -185,5 +190,5 @@ void DAC_write(unsigned int level)
   while (!(EUSCI_B0->IFG & EUSCI_B_IFG_RXIFG))
     ;
 
-  DAC_CS_PORT->OUT |= DAC_CS_PORT;  // set CS high
+  DAC_CS_PORT->OUT |= DAC_CS_PIN;  // set CS high
 }
